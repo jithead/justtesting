@@ -122,6 +122,9 @@ function layout(title, bodyContent) {
       a {
         color: inherit;
       }
+      li + li {
+        margin-top: 12px;
+      }
     </style>
   </head>
   <body>
