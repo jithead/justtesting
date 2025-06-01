@@ -48,7 +48,7 @@ function saveBoards() {
 
 function addQuestion(targetUser, question, author, email = '') {
   if (!boards[targetUser]) boards[targetUser] = [];
-  boards[targetUser].push({ question, author, email, votes: 0 });
+  boards[targetUser].push({ question, author, email, votes: 0, followers: [] });
   saveBoards();
 
   const user = users[targetUser];
@@ -60,10 +60,15 @@ function addQuestion(targetUser, question, author, email = '') {
   }
 }
 
-function voteQuestion(targetUser, index) {
+function followQuestion(targetUser, index, email) {
   if (boards[targetUser] && boards[targetUser][index]) {
-    boards[targetUser][index].votes++;
-    saveBoards();
+    const q = boards[targetUser][index];
+    if (!q.followers) q.followers = [];
+    if (email && !q.followers.includes(email)) {
+      q.followers.push(email);
+      q.votes = q.followers.length;
+      saveBoards();
+    }
   }
 }
 
@@ -234,17 +239,69 @@ function questionForm(targetUser, message = '', username) {
 }
 
 function boardPage(targetUser, username) {
+  const popup = username ? '' : `
+    <div id="emailPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+      <div style="background:#fff;padding:20px;max-width:300px;margin:100px auto;position:relative;">
+        <button id="closeEmailPopup" style="position:absolute;top:4px;right:4px;">x</button>
+        <div id="guestOptions">
+          <p><a href="/login">Log in</a> | <a href="/signup">Create an account</a></p>
+          <p><button id="continueGuestBtn">Continue as Guest</button></p>
+        </div>
+        <form id="guestEmailForm" style="display:none;">
+          <p>We need your email address to update you when this is answered, but we won't create an account.</p>
+          <p><input type="email" id="guestEmailInput" placeholder="Email" required /></p>
+          <p><button type="submit">Follow Question</button></p>
+        </form>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        var popup = document.getElementById('emailPopup');
+        var guestOptions = document.getElementById('guestOptions');
+        var guestEmailForm = document.getElementById('guestEmailForm');
+        var currentForm = null;
+        document.getElementById('continueGuestBtn').addEventListener('click', function(e) {
+          e.preventDefault();
+          guestOptions.style.display = 'none';
+          guestEmailForm.style.display = 'block';
+        });
+        document.getElementById('closeEmailPopup').addEventListener('click', function(e) {
+          e.preventDefault();
+          popup.style.display = 'none';
+        });
+        document.querySelectorAll('.followForm').forEach(function(form) {
+          form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            currentForm = form;
+            popup.style.display = 'block';
+          });
+        });
+        guestEmailForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          var email = document.getElementById('guestEmailInput').value.trim();
+          if (email && currentForm) currentForm.querySelector('.guestEmail').value = email;
+          popup.style.display = 'none';
+          if (currentForm) currentForm.submit();
+        });
+      });
+    </script>
+  `;
+
   const q = (boards[targetUser] || []).slice().sort((a, b) => b.votes - a.votes);
   const items = q.map((item, i) => {
     const text = `${item.question}${item.author ? ' - ' + item.author : ''}`;
-    return `<li>${text} <form style="display:inline" method="POST" action="/vote">` +
+    const count = item.followers ? item.followers.length : item.votes;
+    const hiddenEmail = username ? '' : '<input type="hidden" name="guestEmail" class="guestEmail" />';
+    return `<li>${text} <form class="followForm" style="display:inline" method="POST" action="/follow">` +
            `<input type="hidden" name="user" value="${targetUser}" />` +
            `<input type="hidden" name="id" value="${i}" />` +
-           `<button type="submit">Upvote (${item.votes})</button>` +
+           `${hiddenEmail}` +
+           `<button type="submit">Follow (${count})</button>` +
            `</form></li>`;
   }).join('');
   const back = username ? '<p><a href="/">Back</a></p>' : '';
   return layout(`${targetUser}'s Board`, `
+    ${popup}
     <h1>${targetUser}'s Board</h1>
     <ul>${items}</ul>
     <p><a href="/ask/${targetUser}">Ask a question</a></p>
@@ -311,9 +368,11 @@ const server = http.createServer(async (req, res) => {
   } else if (req.method === 'GET' && url.pathname.startsWith('/board/')) {
     const targetUser = decodeURIComponent(url.pathname.slice(7));
     send(res, 200, boardPage(targetUser, username));
-  } else if (req.method === 'POST' && url.pathname === '/vote') {
-    const { user, id } = await parseBody(req);
-    voteQuestion(user, parseInt(id, 10));
+  } else if (req.method === 'POST' && url.pathname === '/follow') {
+    const { user, id, guestEmail = '' } = await parseBody(req);
+    const userEmail = username && users[username] ? users[username].email : '';
+    const email = userEmail || guestEmail.trim();
+    followQuestion(user, parseInt(id, 10), email);
     send(res, 302, '', { 'Location': `/board/${user}` });
   } else {
     send(res, 404, '<h1>Not Found</h1>');
