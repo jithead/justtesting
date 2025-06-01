@@ -171,7 +171,7 @@ function questionForm(targetUser, message = '') {
   `);
 }
 
-function boardPage(targetUser) {
+function boardPage(targetUser, username) {
   const q = (boards[targetUser] || []).slice().sort((a, b) => b.votes - a.votes);
   const items = q.map((item, i) => {
     const text = `${item.question}${item.author ? ' - ' + item.author : ''}`;
@@ -181,10 +181,12 @@ function boardPage(targetUser) {
            `<button type="submit">Upvote (${item.votes})</button>` +
            `</form></li>`;
   }).join('');
+  const back = username ? '<p><a href="/">Back</a></p>' : '';
   return layout(`${targetUser}'s Board`, `
     <h1>${targetUser}'s Board</h1>
     <ul>${items}</ul>
     <p><a href="/ask/${targetUser}">Ask a question</a></p>
+    ${back}
   `);
 }
 
@@ -244,7 +246,7 @@ const server = http.createServer(async (req, res) => {
     }
   } else if (req.method === 'GET' && url.pathname.startsWith('/board/')) {
     const targetUser = decodeURIComponent(url.pathname.slice(7));
-    send(res, 200, boardPage(targetUser));
+    send(res, 200, boardPage(targetUser, username));
   } else if (req.method === 'POST' && url.pathname === '/vote') {
     const { user, id } = await parseBody(req);
     voteQuestion(user, parseInt(id, 10));
