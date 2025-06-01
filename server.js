@@ -47,9 +47,9 @@ function saveBoards() {
   fs.writeFileSync(QUESTIONS_FILE, JSON.stringify(boards, null, 2));
 }
 
-function addQuestion(targetUser, question, author) {
+function addQuestion(targetUser, question, author, email = '') {
   if (!boards[targetUser]) boards[targetUser] = [];
-  boards[targetUser].push({ question, author, votes: 0 });
+  boards[targetUser].push({ question, author, email, votes: 0 });
   saveBoards();
 
   const user = users[targetUser];
@@ -173,13 +173,66 @@ function loginForm(message = '') {
   `);
 }
 
-function questionForm(targetUser, message = '') {
+function questionForm(targetUser, message = '', username) {
+  const popup = username ? '' : `
+    <div id="emailPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+      <div style="background:#fff;padding:20px;max-width:300px;margin:100px auto;position:relative;">
+        <button id="closePopup" type="button" style="position:absolute;top:4px;right:4px;">x</button>
+        <div id="popupOptions">
+          <p>We need your email address so that we can let you know when the answer is published.</p>
+          <p><a href="/login">Log in</a> | <a href="/signup">Create an account</a></p>
+          <p><button id="continueGuest" type="button">Continue as Guest</button></p>
+        </div>
+        <form id="guestEmailForm" style="display:none;">
+          <p>We need your email address to update you when this is answered, but we won't create an account.</p>
+          <p><input type="email" id="guestEmailInput" placeholder="Email" required /></p>
+          <p><button type="submit">Submit Question</button></p>
+        </form>
+      </div>
+    </div>
+    <script>
+      var qForm = document.getElementById('questionForm');
+      var popup = document.getElementById('emailPopup');
+      var closeBtn = document.getElementById('closePopup');
+      var continueBtn = document.getElementById('continueGuest');
+      var guestForm = document.getElementById('guestEmailForm');
+      var optionsDiv = document.getElementById('popupOptions');
+      var guestEmailInput = document.getElementById('guestEmailInput');
+      if(qForm){
+        qForm.addEventListener('submit', function(e){
+          if(!document.getElementById('guestEmail').value){
+            e.preventDefault();
+            popup.style.display = 'block';
+          }
+        });
+      }
+      closeBtn.addEventListener('click', function(){ popup.style.display = 'none'; });
+      continueBtn.addEventListener('click', function(){
+        optionsDiv.style.display = 'none';
+        guestForm.style.display = 'block';
+      });
+      guestForm.addEventListener('submit', function(e){
+        e.preventDefault();
+        var email = guestEmailInput.value.trim();
+        if(email){
+          document.getElementById('guestEmail').value = email;
+          popup.style.display = 'none';
+          qForm.submit();
+        }
+      });
+    </script>
+  `;
+
+  const hiddenEmail = username ? '' : '<input type="hidden" id="guestEmail" name="guestEmail" />';
+
   return layout(`Ask ${targetUser}`, `
+    ${popup}
     <h1>What would you like ${targetUser} to answer?</h1>
     ${message ? `<p style="color:red;">${message}</p>` : ''}
-    <form method="POST" action="/ask/${targetUser}">
+    <form id="questionForm" method="POST" action="/ask/${targetUser}">
       <p><input name="question" maxlength="140" placeholder="Your question" required /></p>
       <p><input name="author" placeholder="Who asked the question? (optional)" /></p>
+      ${hiddenEmail}
       <p><button type="submit">Submit</button></p>
     </form>
   `);
@@ -248,14 +301,16 @@ const server = http.createServer(async (req, res) => {
     send(res, 302, '', { 'Set-Cookie': 'sessionId=; Max-Age=0', 'Location': '/' });
   } else if (req.method === 'GET' && url.pathname.startsWith('/ask/')) {
     const targetUser = decodeURIComponent(url.pathname.slice(5));
-    send(res, 200, questionForm(targetUser));
+    send(res, 200, questionForm(targetUser, '', username));
   } else if (req.method === 'POST' && url.pathname.startsWith('/ask/')) {
     const targetUser = decodeURIComponent(url.pathname.slice(5));
-    const { question, author = '' } = await parseBody(req);
+    const { question, author = '', guestEmail = '' } = await parseBody(req);
     if (!question) {
-      send(res, 400, questionForm(targetUser, 'Question required'));
+      send(res, 400, questionForm(targetUser, 'Question required', username));
     } else {
-      addQuestion(targetUser, question.slice(0, 140), author.trim());
+      const userEmail = username && users[username] ? users[username].email : '';
+      const email = userEmail || guestEmail.trim();
+      addQuestion(targetUser, question.slice(0, 140), author.trim(), email);
       send(res, 302, '', { 'Location': `/board/${targetUser}` });
     }
   } else if (req.method === 'GET' && url.pathname.startsWith('/board/')) {
