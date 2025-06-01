@@ -48,7 +48,12 @@ function saveBoards() {
 
 function addQuestion(targetUser, question, author, email = '') {
   if (!boards[targetUser]) boards[targetUser] = [];
-  boards[targetUser].push({ question, author, email, votes: 0, followers: [] });
+
+  const followers = [];
+  if (email) {
+    followers.push(email);
+  }
+  boards[targetUser].push({ question, author, email, votes: followers.length, followers });
   saveBoards();
 
   const user = users[targetUser];
