@@ -174,23 +174,44 @@ function loginForm(message = '') {
 
 function questionForm(targetUser, message = '', username) {
   const popup = username ? '' : `
-    <div id="emailPopup" style="display:block;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+    <div id="emailPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
       <div style="background:#fff;padding:20px;max-width:300px;margin:100px auto;position:relative;">
-        <button onclick="document.getElementById('emailPopup').style.display='none'" style="position:absolute;top:4px;right:4px;">x</button>
-        <p>We need your email address so that we can let you know when the answer is published.</p>
-        <p><a href="/login">Log in</a> | <a href="/signup">Create an account</a></p>
-        <form id="guestEmailForm">
+        <button id="closeEmailPopup" style="position:absolute;top:4px;right:4px;">x</button>
+        <div id="guestOptions">
+          <p><a href="/login">Log in</a> | <a href="/signup">Create an account</a></p>
+          <p><button id="continueGuestBtn">Continue as Guest</button></p>
+        </div>
+        <form id="guestEmailForm" style="display:none;">
+          <p>We need your email address to update you when this is answered, but we won't create an account.</p>
           <p><input type="email" id="guestEmailInput" placeholder="Email" required /></p>
-          <p><button type="submit">Continue as Guest</button></p>
+          <p><button type="submit">Submit Question</button></p>
         </form>
       </div>
     </div>
     <script>
-      document.getElementById('guestEmailForm').addEventListener('submit', function(e) {
+      var askForm = document.getElementById('askForm');
+      var popup = document.getElementById('emailPopup');
+      var guestOptions = document.getElementById('guestOptions');
+      var guestEmailForm = document.getElementById('guestEmailForm');
+      document.getElementById('continueGuestBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        guestOptions.style.display = 'none';
+        guestEmailForm.style.display = 'block';
+      });
+      document.getElementById('closeEmailPopup').addEventListener('click', function(e) {
+        e.preventDefault();
+        popup.style.display = 'none';
+      });
+      askForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        popup.style.display = 'block';
+      });
+      guestEmailForm.addEventListener('submit', function(e) {
         e.preventDefault();
         var email = document.getElementById('guestEmailInput').value.trim();
         if (email) document.getElementById('guestEmail').value = email;
-        document.getElementById('emailPopup').style.display = 'none';
+        popup.style.display = 'none';
+        askForm.submit();
       });
     </script>
   `;
@@ -201,7 +222,7 @@ function questionForm(targetUser, message = '', username) {
     ${popup}
     <h1>What would you like ${targetUser} to answer?</h1>
     ${message ? `<p style="color:red;">${message}</p>` : ''}
-    <form method="POST" action="/ask/${targetUser}">
+    <form id="askForm" method="POST" action="/ask/${targetUser}">
       <p><input name="question" maxlength="140" placeholder="Your question" required /></p>
       <p><input name="author" placeholder="Who asked the question? (optional)" /></p>
       ${hiddenEmail}
