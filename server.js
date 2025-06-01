@@ -5,6 +5,7 @@ const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 const USERS_FILE = path.join(__dirname, 'users.json');
+const QUESTIONS_FILE = path.join(__dirname, 'questions.json');
 
 // Load users from file
 let users = {};
@@ -12,6 +13,14 @@ try {
   users = JSON.parse(fs.readFileSync(USERS_FILE));
 } catch (e) {
   users = {};
+}
+
+// Load questions from file
+let boards = {};
+try {
+  boards = JSON.parse(fs.readFileSync(QUESTIONS_FILE));
+} catch (e) {
+  boards = {};
 }
 
 // In-memory session store
@@ -27,6 +36,23 @@ function addUser(username, password) {
   const hash = hashPassword(password, salt);
   users[username] = { salt, hash };
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+function saveBoards() {
+  fs.writeFileSync(QUESTIONS_FILE, JSON.stringify(boards, null, 2));
+}
+
+function addQuestion(targetUser, question, author) {
+  if (!boards[targetUser]) boards[targetUser] = [];
+  boards[targetUser].push({ question, author, votes: 0 });
+  saveBoards();
+}
+
+function voteQuestion(targetUser, index) {
+  if (boards[targetUser] && boards[targetUser][index]) {
+    boards[targetUser][index].votes++;
+    saveBoards();
+  }
 }
 
 function authenticate(username, password) {
@@ -96,6 +122,9 @@ function layout(title, bodyContent) {
       a {
         color: inherit;
       }
+      li + li {
+        margin-top: 12px;
+      }
     </style>
   </head>
   <body>
@@ -130,10 +159,39 @@ function loginForm(message = '') {
   `);
 }
 
+function questionForm(targetUser, message = '') {
+  return layout(`Ask ${targetUser}`, `
+    <h1>What would you like ${targetUser} to answer?</h1>
+    ${message ? `<p style="color:red;">${message}</p>` : ''}
+    <form method="POST" action="/ask/${targetUser}">
+      <p><input name="question" maxlength="140" placeholder="Your question" required /></p>
+      <p><input name="author" placeholder="Who asked the question? (optional)" /></p>
+      <p><button type="submit">Submit</button></p>
+    </form>
+  `);
+}
+
+function boardPage(targetUser) {
+  const q = (boards[targetUser] || []).slice().sort((a, b) => b.votes - a.votes);
+  const items = q.map((item, i) => {
+    const text = `${item.question}${item.author ? ' - ' + item.author : ''}`;
+    return `<li>${text} <form style="display:inline" method="POST" action="/vote">` +
+           `<input type="hidden" name="user" value="${targetUser}" />` +
+           `<input type="hidden" name="id" value="${i}" />` +
+           `<button type="submit">Upvote (${item.votes})</button>` +
+           `</form></li>`;
+  }).join('');
+  return layout(`${targetUser}'s Board`, `
+    <h1>${targetUser}'s Board</h1>
+    <ul>${items}</ul>
+    <p><a href="/ask/${targetUser}">Ask a question</a></p>
+  `);
+}
+
 function homePage(username) {
   return layout('Home', `
     <h1>Welcome${username ? ', ' + username : ''}</h1>
-    ${username ? '<a href="/logout">Logout</a>' : '<a href="/login">Login</a> | <a href="/signup">Sign Up</a>'}
+    ${username ? `<p><a href="/board/${username}">Your board</a> | <a href="/ask/${username}">Your question page</a></p><p><a href="/logout">Logout</a></p>` : '<a href="/login">Login</a> | <a href="/signup">Sign Up</a>'}
   `);
 }
 
@@ -172,6 +230,25 @@ const server = http.createServer(async (req, res) => {
       delete sessions[cookies.sessionId];
     }
     send(res, 302, '', { 'Set-Cookie': 'sessionId=; Max-Age=0', 'Location': '/' });
+  } else if (req.method === 'GET' && url.pathname.startsWith('/ask/')) {
+    const targetUser = decodeURIComponent(url.pathname.slice(5));
+    send(res, 200, questionForm(targetUser));
+  } else if (req.method === 'POST' && url.pathname.startsWith('/ask/')) {
+    const targetUser = decodeURIComponent(url.pathname.slice(5));
+    const { question, author = '' } = await parseBody(req);
+    if (!question) {
+      send(res, 400, questionForm(targetUser, 'Question required'));
+    } else {
+      addQuestion(targetUser, question.slice(0, 140), author.trim());
+      send(res, 302, '', { 'Location': `/board/${targetUser}` });
+    }
+  } else if (req.method === 'GET' && url.pathname.startsWith('/board/')) {
+    const targetUser = decodeURIComponent(url.pathname.slice(7));
+    send(res, 200, boardPage(targetUser));
+  } else if (req.method === 'POST' && url.pathname === '/vote') {
+    const { user, id } = await parseBody(req);
+    voteQuestion(user, parseInt(id, 10));
+    send(res, 302, '', { 'Location': `/board/${user}` });
   } else {
     send(res, 404, '<h1>Not Found</h1>');
   }
