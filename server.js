@@ -2,6 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
+// Load environment variables from .env if present
+require('./env')();
 const { sendEmail } = require('./email');
 
 const PORT = process.env.PORT || 3000;
