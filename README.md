@@ -13,7 +13,7 @@ node server.js
 The server listens on port 3000 by default. Open your browser and navigate to `http://localhost:3000` to access the site.
 
 User data is stored in `users.json` in the project directory. When signing up
-you can optionally provide an email address. If provided, the server will send
+you must provide an email address. The server will send
 notifications about new questions directed at that user when email support is
 configured.
 
