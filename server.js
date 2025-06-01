@@ -72,6 +72,21 @@ function followQuestion(targetUser, index, email) {
   }
 }
 
+function answerQuestion(targetUser, index, link) {
+  if (boards[targetUser] && boards[targetUser][index]) {
+    const q = boards[targetUser][index];
+    q.answer = link;
+    saveBoards();
+
+    const text = `Hello!\n\n${targetUser} has answered the question that you're following:\n\n${q.question}.\n\nYou can see their answer here: ${link}`;
+    (q.followers || []).forEach(email => {
+      sendEmail(email, 'Question Answered', text, (err) => {
+        if (err) console.error('Failed to send email:', err.message);
+      });
+    });
+  }
+}
+
 function authenticate(username, password) {
   const record = users[username];
   if (!record) return false;
@@ -287,11 +302,49 @@ function boardPage(targetUser, username) {
     </script>
   `;
 
+  const answerPopup = username === targetUser ? `
+    <div id="answerPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+      <div style="background:#fff;padding:20px;max-width:400px;margin:100px auto;position:relative;">
+        <button id="closeAnswerPopup" style="position:absolute;top:4px;right:4px;">x</button>
+        <p><em id="answerQuestionText"></em></p>
+        <p>Enter a link to a blog / video / post with your answer below, and we'll update everyone that's asked you to answer it.</p>
+        <form id="answerForm" method="POST" action="/answer">
+          <input type="hidden" name="user" value="${targetUser}" />
+          <input type="hidden" name="id" id="answerQuestionId" />
+          <p><input name="link" id="answerLinkInput" required /></p>
+          <p><button type="submit">Share your answer</button></p>
+        </form>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.answerBtn').forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.getElementById('answerQuestionText').textContent = btn.dataset.question;
+            document.getElementById('answerQuestionId').value = btn.dataset.id;
+            document.getElementById('answerPopup').style.display = 'block';
+          });
+        });
+        document.getElementById('closeAnswerPopup').addEventListener('click', function(e) {
+          e.preventDefault();
+          document.getElementById('answerPopup').style.display = 'none';
+        });
+      });
+    </script>
+  ` : '';
+
   const q = (boards[targetUser] || []).slice().sort((a, b) => b.votes - a.votes);
   const items = q.map((item, i) => {
     const text = `${item.question}${item.author ? ' - ' + item.author : ''}`;
     const count = item.followers ? item.followers.length : item.votes;
     const hiddenEmail = username ? '' : '<input type="hidden" name="guestEmail" class="guestEmail" />';
+    if (item.answer) {
+      return `<li>${text} <a href="${item.answer}" style="color:green;">Answered!</a></li>`;
+    }
+    if (username === targetUser) {
+      return `<li>${text} <button class="answerBtn" data-id="${i}" data-question="${text}">Answer (${count})</button></li>`;
+    }
     return `<li>${text} <form class="followForm" style="display:inline" method="POST" action="/follow">` +
            `<input type="hidden" name="user" value="${targetUser}" />` +
            `<input type="hidden" name="id" value="${i}" />` +
@@ -302,6 +355,7 @@ function boardPage(targetUser, username) {
   const back = username ? '<p><a href="/">Back</a></p>' : '';
   return layout(`${targetUser}'s Board`, `
     ${popup}
+    ${answerPopup}
     <h1>${targetUser}'s Board</h1>
     <ul>${items}</ul>
     <p><a href="/ask/${targetUser}">Ask a question</a></p>
@@ -374,6 +428,16 @@ const server = http.createServer(async (req, res) => {
     const email = userEmail || guestEmail.trim();
     followQuestion(user, parseInt(id, 10), email);
     send(res, 302, '', { 'Location': `/board/${user}` });
+  } else if (req.method === 'POST' && url.pathname === '/answer') {
+    const { user, id, link } = await parseBody(req);
+    if (username !== user) {
+      send(res, 403, '<h1>Forbidden</h1>');
+    } else if (!link) {
+      send(res, 400, '<h1>Link required</h1>');
+    } else {
+      answerQuestion(user, parseInt(id, 10), link.trim());
+      send(res, 302, '', { 'Location': `/board/${user}` });
+    }
   } else {
     send(res, 404, '<h1>Not Found</h1>');
   }
