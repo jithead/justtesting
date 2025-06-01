@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
+const { sendEmail } = require('./email');
 
 const PORT = process.env.PORT || 3000;
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -31,10 +32,12 @@ function hashPassword(password, salt) {
   return hash.toString('hex');
 }
 
-function addUser(username, password) {
+function addUser(username, password, email) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  users[username] = { salt, hash };
+  const record = { salt, hash };
+  if (email) record.email = email.trim();
+  users[username] = record;
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
@@ -46,6 +49,14 @@ function addQuestion(targetUser, question, author) {
   if (!boards[targetUser]) boards[targetUser] = [];
   boards[targetUser].push({ question, author, votes: 0 });
   saveBoards();
+
+  const user = users[targetUser];
+  if (user && user.email) {
+    const text = `${author ? author + ' asks: ' : ''}${question}`;
+    sendEmail(user.email, 'New Question Submitted', text, (err) => {
+      if (err) console.error('Failed to send email:', err.message);
+    });
+  }
 }
 
 function voteQuestion(targetUser, index) {
@@ -140,6 +151,7 @@ function signupForm(message = '') {
     <form method="POST" action="/signup">
       <p><input name="username" placeholder="Username" required /></p>
       <p><input type="password" name="password" placeholder="Password" required /></p>
+      <p><input name="email" type="email" placeholder="Email (optional)" /></p>
       <p><button type="submit">Sign Up</button></p>
     </form>
     <p><a href="/login">Login</a></p>
@@ -207,13 +219,13 @@ const server = http.createServer(async (req, res) => {
   } else if (req.method === 'GET' && url.pathname === '/signup') {
     send(res, 200, signupForm());
   } else if (req.method === 'POST' && url.pathname === '/signup') {
-    const { username, password } = await parseBody(req);
+    const { username, password, email } = await parseBody(req);
     if (!username || !password) {
       send(res, 400, signupForm('Missing username or password'));
     } else if (users[username]) {
       send(res, 400, signupForm('Username already exists'));
     } else {
-      addUser(username, password);
+      addUser(username, password, email);
       send(res, 302, '', { 'Location': '/login' });
     }
   } else if (req.method === 'GET' && url.pathname === '/login') {
