@@ -67,46 +67,74 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
-function signupForm(message = '') {
+function layout(title, bodyContent) {
   return `<!DOCTYPE html>
 <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${title}</title>
+    <style>
+      body {
+        font-family: "Courier New", Courier, monospace;
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 0 10px;
+        font-size: 18px;
+        line-height: 1.5;
+        color: #333;
+        background: #fff;
+      }
+      input, button {
+        font-family: inherit;
+        font-size: 16px;
+        padding: 6px 8px;
+      }
+      h1 {
+        font-weight: normal;
+        margin: 0 0 1em 0;
+      }
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
   <body>
+    ${bodyContent}
+  </body>
+</html>`;
+}
+
+function signupForm(message = '') {
+  return layout('Sign Up', `
     <h1>Sign Up</h1>
     ${message ? `<p style="color:red;">${message}</p>` : ''}
     <form method="POST" action="/signup">
-      <input name="username" placeholder="Username" required />
-      <input type="password" name="password" placeholder="Password" required />
-      <button type="submit">Sign Up</button>
+      <p><input name="username" placeholder="Username" required /></p>
+      <p><input type="password" name="password" placeholder="Password" required /></p>
+      <p><button type="submit">Sign Up</button></p>
     </form>
-    <a href="/login">Login</a>
-  </body>
-</html>`;
+    <p><a href="/login">Login</a></p>
+  `);
 }
 
 function loginForm(message = '') {
-  return `<!DOCTYPE html>
-<html>
-  <body>
+  return layout('Login', `
     <h1>Login</h1>
     ${message ? `<p style="color:red;">${message}</p>` : ''}
     <form method="POST" action="/login">
-      <input name="username" placeholder="Username" required />
-      <input type="password" name="password" placeholder="Password" required />
-      <button type="submit">Login</button>
+      <p><input name="username" placeholder="Username" required /></p>
+      <p><input type="password" name="password" placeholder="Password" required /></p>
+      <p><button type="submit">Login</button></p>
     </form>
-    <a href="/signup">Sign Up</a>
-  </body>
-</html>`;
+    <p><a href="/signup">Sign Up</a></p>
+  `);
 }
 
 function homePage(username) {
-  return `<!DOCTYPE html>
-<html>
-  <body>
+  return layout('Home', `
     <h1>Welcome${username ? ', ' + username : ''}</h1>
     ${username ? '<a href="/logout">Logout</a>' : '<a href="/login">Login</a> | <a href="/signup">Sign Up</a>'}
-  </body>
-</html>`;
+  `);
 }
 
 const server = http.createServer(async (req, res) => {
