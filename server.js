@@ -37,8 +37,7 @@ function hashPassword(password, salt) {
 function addUser(username, password, email) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const record = { salt, hash };
-  if (email) record.email = email.trim();
+  const record = { salt, hash, email: email.trim() };
   users[username] = record;
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
@@ -153,7 +152,7 @@ function signupForm(message = '') {
     <form method="POST" action="/signup">
       <p><input name="username" placeholder="Username" required /></p>
       <p><input type="password" name="password" placeholder="Password" required /></p>
-      <p><input name="email" type="email" placeholder="Email (optional)" /></p>
+      <p><input name="email" type="email" placeholder="Email" required /></p>
       <p><button type="submit">Sign Up</button></p>
     </form>
     <p><a href="/login">Login</a></p>
@@ -248,8 +247,8 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, signupForm());
   } else if (req.method === 'POST' && url.pathname === '/signup') {
     const { username, password, email } = await parseBody(req);
-    if (!username || !password) {
-      send(res, 400, signupForm('Missing username or password'));
+    if (!username || !password || !email) {
+      send(res, 400, signupForm('Missing username, password or email'));
     } else if (users[username]) {
       send(res, 400, signupForm('Username already exists'));
     } else {
