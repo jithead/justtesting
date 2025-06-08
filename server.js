@@ -46,14 +46,17 @@ function saveBoards() {
   fs.writeFileSync(QUESTIONS_FILE, JSON.stringify(boards, null, 2));
 }
 
-function addQuestion(targetUser, question, author, email = '') {
+function addQuestion(targetUser, question, author = '', email = '') {
   if (!boards[targetUser]) boards[targetUser] = [];
 
   const followers = [];
   if (email) {
     followers.push(email);
   }
-  boards[targetUser].push({ question, author, email, votes: followers.length, followers });
+  const item = { question, votes: followers.length, followers };
+  if (author) item.author = author;
+  if (email) item.email = email;
+  boards[targetUser].push(item);
   saveBoards();
 
   const user = users[targetUser];
@@ -86,6 +89,21 @@ function answerQuestion(targetUser, index, link) {
     const text = `Hello!\n\n${targetUser} has answered the question that you're following:\n\n${q.question}.\n\nYou can see their answer here: ${link}`;
     (q.followers || []).forEach(email => {
       sendEmail(email, 'Question Answered', text, (err) => {
+        if (err) console.error('Failed to send email:', err.message);
+      });
+    });
+  }
+}
+
+function declineQuestion(targetUser, index, reason) {
+  if (boards[targetUser] && boards[targetUser][index]) {
+    const q = boards[targetUser][index];
+    q.declined = reason || 'No reason given';
+    saveBoards();
+
+    const text = `Hello!\n\n${targetUser} has decided not to answer the question you're following:\n\n${q.question}.\n\nThis is what they said about it:\n${reason}`;
+    (q.followers || []).forEach(email => {
+      sendEmail(email, "Question Won't Be Answered", text, (err) => {
         if (err) console.error('Failed to send email:', err.message);
       });
     });
@@ -248,10 +266,10 @@ function questionForm(targetUser, message = '', username) {
   return layout(`Ask ${targetUser}`, `
     ${popup}
     <h1>What would you like ${targetUser} to answer?</h1>
+    <p><a href="/board/${targetUser}">View questions others have asked ${targetUser}'s</a></p>
     ${message ? `<p style="color:red;">${message}</p>` : ''}
     <form id="askForm" method="POST" action="/ask/${targetUser}">
-      <p><input name="question" maxlength="140" placeholder="Your question" required /></p>
-      <p><input name="author" placeholder="Who asked the question? (optional)" /></p>
+      <p><textarea name="question" maxlength="140" placeholder="Your question" required style="width:100%;height:150px;"></textarea></p>
       ${hiddenEmail}
       <p><button type="submit">Submit</button></p>
     </form>
@@ -317,6 +335,8 @@ function boardPage(targetUser, username) {
           <input type="hidden" name="user" value="${targetUser}" />
           <input type="hidden" name="id" id="answerQuestionId" />
           <p><input name="link" id="answerLinkInput" required /></p>
+          <p><label><input type="checkbox" id="declineCheckbox" name="decline" value="1" /> I'm not going to answer this question</label></p>
+          <p id="declineReasonBox" style="display:none;"><input name="reason" id="declineReasonInput" placeholder="Tell people why you won't answer this question" /></p>
           <p><button type="submit">Share your answer</button></p>
         </form>
       </div>
@@ -335,6 +355,20 @@ function boardPage(targetUser, username) {
           e.preventDefault();
           document.getElementById('answerPopup').style.display = 'none';
         });
+        var declineCheckbox = document.getElementById('declineCheckbox');
+        var declineBox = document.getElementById('declineReasonBox');
+        var linkInput = document.getElementById('answerLinkInput');
+        if (declineCheckbox) {
+          declineCheckbox.addEventListener('change', function() {
+            if (declineCheckbox.checked) {
+              declineBox.style.display = 'block';
+              linkInput.removeAttribute('required');
+            } else {
+              declineBox.style.display = 'none';
+              linkInput.setAttribute('required', '');
+            }
+          });
+        }
       });
     </script>
   ` : '';
@@ -345,7 +379,11 @@ function boardPage(targetUser, username) {
     const count = item.followers ? item.followers.length : item.votes;
     const hiddenEmail = username ? '' : '<input type="hidden" name="guestEmail" class="guestEmail" />';
     if (item.answer) {
-      return `<li>${text} <a href="${item.answer}" style="color:green;">Answered!</a></li>`;
+      return `<li>${text} <a href="${item.answer}" target="_blank" style="color:green;">Answered!</a></li>`;
+    }
+    if (item.declined) {
+      const reason = item.declined.replace(/"/g, '&quot;');
+      return `<li>${text} <span style="color:red;" title="${reason}">Won't be answered</span></li>`;
     }
     if (username === targetUser) {
       return `<li>${text} <button class="answerBtn" data-id="${i}" data-question="${text}">Answer (${count})</button></li>`;
@@ -415,13 +453,13 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, questionForm(targetUser, '', username));
   } else if (req.method === 'POST' && url.pathname.startsWith('/ask/')) {
     const targetUser = decodeURIComponent(url.pathname.slice(5));
-    const { question, author = '', guestEmail = '' } = await parseBody(req);
+    const { question, guestEmail = '' } = await parseBody(req);
     if (!question) {
       send(res, 400, questionForm(targetUser, 'Question required', username));
     } else {
       const userEmail = username && users[username] ? users[username].email : '';
       const email = userEmail || guestEmail.trim();
-      addQuestion(targetUser, question.slice(0, 140), author.trim(), email);
+      addQuestion(targetUser, question.slice(0, 140), '', email);
       send(res, 302, '', { 'Location': `/board/${targetUser}` });
     }
   } else if (req.method === 'GET' && url.pathname.startsWith('/board/')) {
@@ -434,9 +472,12 @@ const server = http.createServer(async (req, res) => {
     followQuestion(user, parseInt(id, 10), email);
     send(res, 302, '', { 'Location': `/board/${user}` });
   } else if (req.method === 'POST' && url.pathname === '/answer') {
-    const { user, id, link } = await parseBody(req);
+    const { user, id, link = '', decline, reason = '' } = await parseBody(req);
     if (username !== user) {
       send(res, 403, '<h1>Forbidden</h1>');
+    } else if (decline) {
+      declineQuestion(user, parseInt(id, 10), reason.trim());
+      send(res, 302, '', { 'Location': `/board/${user}` });
     } else if (!link) {
       send(res, 400, '<h1>Link required</h1>');
     } else {
