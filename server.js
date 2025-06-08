@@ -81,6 +81,7 @@ function answerQuestion(targetUser, index, link) {
   if (boards[targetUser] && boards[targetUser][index]) {
     const q = boards[targetUser][index];
     q.answer = link;
+    q.answeredAt = new Date().toISOString();
     saveBoards();
 
     const text = `Hello!\n\n${targetUser} has answered the question that you're following:\n\n${q.question}.\n\nYou can see their answer here: ${link}`;
@@ -339,8 +340,19 @@ function boardPage(targetUser, username) {
     </script>
   ` : '';
 
-  const q = (boards[targetUser] || []).slice().sort((a, b) => b.votes - a.votes);
-  const items = q.map((item, i) => {
+  const list = boards[targetUser] || [];
+  const unanswered = list
+    .map((item, idx) => ({ item, idx }))
+    .filter(q => !q.item.answer)
+    .sort((a, b) => b.item.votes - a.item.votes);
+  const answered = list
+    .map((item, idx) => ({ item, idx }))
+    .filter(q => q.item.answer)
+    .sort((a, b) => new Date(a.item.answeredAt || 0) - new Date(b.item.answeredAt || 0));
+
+  function renderItem(q) {
+    const item = q.item;
+    const i = q.idx;
     const text = `${item.question}${item.author ? ' - ' + item.author : ''}`;
     const count = item.followers ? item.followers.length : item.votes;
     const hiddenEmail = username ? '' : '<input type="hidden" name="guestEmail" class="guestEmail" />';
@@ -356,13 +368,19 @@ function boardPage(targetUser, username) {
            `${hiddenEmail}` +
            `<button type="submit">Follow (${count})</button>` +
            `</form></li>`;
-  }).join('');
+  }
+
+  const unansweredItems = unanswered.map(renderItem).join('');
+  const answeredItems = answered.map(renderItem).join('');
   const back = username ? '<p><a href="/">Back</a></p>' : '';
   return layout(`${targetUser}'s Board`, `
     ${popup}
     ${answerPopup}
     <h1>${targetUser}'s Board</h1>
-    <ul>${items}</ul>
+    <h2>Unanswered Questions</h2>
+    <ul>${unansweredItems}</ul>
+    <h2>Answered Questions</h2>
+    <ul>${answeredItems}</ul>
     <p><a href="/ask/${targetUser}">Ask a question</a></p>
     ${back}
   `);
@@ -370,7 +388,7 @@ function boardPage(targetUser, username) {
 
 function homePage(username) {
   return layout('Home', `
-    <h1>Welcome${username ? ', ' + username : ''}</h1>
+    <h1>Welcome to Pulley${username ? ', ' + username : ''}</h1>
     ${username ? `<p><a href="/board/${username}">Your board</a> | <a href="/ask/${username}">Your question page</a></p><p><a href="/logout">Logout</a></p>` : '<a href="/login">Login</a> | <a href="/signup">Sign Up</a>'}
   `);
 }
